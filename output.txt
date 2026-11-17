@@ -1,5 +1,49 @@
-Run startedInitializing environmentInstalling packagesRunning code   line 500, in <module>
-   line 452, in main
-  File "/lib/python312.zip/threading.py", line 992, in start
-    _start_new_thread(self._bootstrap, ())
-RuntimeError: can't start new threadRun completed in 11,550.900ms
+Starting API Simulator on port 54321...
+API Base URL: http://localhost:54321
+
+============================================================
+MOCK API TEST
+============================================================
+
+--- Testing GET /api/users/1 (Existing User) ---
+Status Code: 200
+Response: {'id': 1, 'name': 'Alice', 'role': 'Admin'}
+
+--- Testing GET /api/users/99 (Non-existent User) ---
+Status Code: 404
+Response: {'error': 'Not Found', 'message': 'User with ID 99 not found'}
+
+--- Testing GET /api/users/invalid_id (Bad Request) ---
+Status Code: 400
+Response: {'error': 'Bad Request', 'message': 'User ID must be an integer'}
+
+--- Testing GET /api/users ---
++--------+----------------------+-----------------+
+| ID     | Name                 | Role            |
++--------+----------------------+-----------------+
+| 1      | Alice                | Admin           |
+| 2      | Bob                  | User            |
++--------+----------------------+-----------------+
+
+--- Testing POST /api/users (Create User) ---
+Status Code: 201
+Response: {'id': 3, 'name': 'Charlie', 'role': 'Developer'}
+
+--- Users After Creating Charlie ---
++--------+----------------------+-----------------+
+| ID     | Name                 | Role            |
++--------+----------------------+-----------------+
+| 1      | Alice                | Admin           |
+| 2      | Bob                  | User            |
+| 3      | Charlie              | Developer       |
++--------+----------------------+-----------------+
+
+--- Testing POST /api/users (Invalid User) ---
+Status Code: 400
+Response: {'error': 'Invalid input', 'message': "'name' is required and must be a non-empty string"}
+
+============================================================
+API simulator is still running.
+Base URL: http://localhost:54321
+Press Ctrl+C to stop.
+============================================================
