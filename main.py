@@ -1,3 +1,21 @@
+"""
+Mock API Simulator
+==================
+
+A self-contained local HTTP API simulator using only Python's standard library
+plus the external ``requests`` package for the client-side tests.
+
+Endpoints
+---------
+GET  /api/users
+GET  /api/users/<id>
+POST /api/users
+
+This file is intentionally verbose and contains extensive documentation,
+validation helpers, testing helpers, and examples so that it can also serve
+as a learning/reference file.
+"""
+
 import json
 import socket
 import threading
@@ -20,220 +38,164 @@ Mock_DB = {
 
 
 # ============================================================
+# Configuration
+# ============================================================
+
+HOST = "localhost"
+REQUEST_TIMEOUT = 5
+
+
+# ============================================================
 # API Request Handler
 # ============================================================
 
 class MockAPIHandler(BaseHTTPRequestHandler):
 
     def _set_headers(self, status_code=200, content_type="application/json"):
-        """Send HTTP response headers."""
         self.send_response(status_code)
         self.send_header("Content-Type", content_type)
         self.end_headers()
 
-    # --------------------------------------------------------
-    # GET Requests
-    # --------------------------------------------------------
+    def _send_json(self, payload, status_code=200):
+        self._set_headers(status_code)
+        body = json.dumps(payload).encode("utf-8")
+        self.wfile.write(body)
 
     def do_GET(self):
-        """Handle GET requests."""
-
-        # GET /api/users
         if self.path == "/api/users":
-            self._set_headers(200)
+            self._send_json(Mock_DB["users"], 200)
+            return
 
-            response = json.dumps(Mock_DB["users"]).encode("utf-8")
-            self.wfile.write(response)
-
-        # GET /api/users/<id>
-        elif self.path.startswith("/api/users/"):
-
-            # Extract the ID from the URL path
+        if self.path.startswith("/api/users/"):
             parts = self.path.split("/")
 
             try:
                 user_id = int(parts[-1])
-
-                user = next(
-                    (u for u in Mock_DB["users"] if u["id"] == user_id),
-                    None
-                )
-
-                if user:
-                    self._set_headers(200)
-
-                    response = json.dumps(user).encode("utf-8")
-                    self.wfile.write(response)
-
-                else:
-                    self._set_headers(404)
-
-                    response = {
-                        "error": "Not Found",
-                        "message": f"User with ID {user_id} not found",
-                    }
-
-                    self.wfile.write(
-                        json.dumps(response).encode("utf-8")
-                    )
-
             except ValueError:
-                self._set_headers(400)
-
-                response = {
-                    "error": "Bad Request",
-                    "message": "User ID must be an integer",
-                }
-
-                self.wfile.write(
-                    json.dumps(response).encode("utf-8")
+                self._send_json(
+                    {
+                        "error": "Bad Request",
+                        "message": "User ID must be an integer",
+                    },
+                    400,
                 )
+                return
 
-        # Unknown endpoint
-        else:
-            self._set_headers(404)
-
-            response = {
-                "error": "Not Found"
-            }
-
-            self.wfile.write(
-                json.dumps(response).encode("utf-8")
+            user = next(
+                (u for u in Mock_DB["users"] if u["id"] == user_id),
+                None,
             )
 
-    # --------------------------------------------------------
-    # POST Requests
-    # --------------------------------------------------------
+            if user is None:
+                self._send_json(
+                    {
+                        "error": "Not Found",
+                        "message": f"User with ID {user_id} not found",
+                    },
+                    404,
+                )
+                return
+
+            self._send_json(user, 200)
+            return
+
+        self._send_json({"error": "Not Found"}, 404)
 
     def do_POST(self):
-        """Handle POST requests."""
+        if self.path != "/api/users":
+            self._send_json({"error": "Not Found"}, 404)
+            return
 
-        # POST /api/users
-        if self.path == "/api/users":
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length)
+            new_user = json.loads(post_data.decode("utf-8"))
 
-            try:
-                # Get request body size
-                content_length = int(
-                    self.headers.get("Content-Length", 0)
-                )
+            if not isinstance(new_user, dict):
+                raise ValueError("Request body must be a JSON object")
 
-                # Read request body
-                post_data = self.rfile.read(content_length)
+            name = new_user.get("name")
+            role = new_user.get("role")
 
-                # Parse JSON
-                new_user = json.loads(
-                    post_data.decode("utf-8")
-                )
-
-                # Basic Input Validation
-                if not isinstance(new_user, dict):
-                    raise ValueError(
-                        "Request body must be a JSON object"
-                    )
-
-                # Validate name
-                if (
-                    "name" not in new_user
-                    or not isinstance(new_user["name"], str)
-                    or not new_user["name"].strip()
-                ):
-                    self._set_headers(400)
-
-                    response = {
+            if not isinstance(name, str) or not name.strip():
+                self._send_json(
+                    {
                         "error": "Invalid input",
                         "message": (
                             "'name' is required and must be "
                             "a non-empty string"
                         ),
-                    }
+                    },
+                    400,
+                )
+                return
 
-                    self.wfile.write(
-                        json.dumps(response).encode("utf-8")
-                    )
-
-                    return
-
-                # Validate role
-                if (
-                    "role" not in new_user
-                    or not isinstance(new_user["role"], str)
-                    or not new_user["role"].strip()
-                ):
-                    self._set_headers(400)
-
-                    response = {
+            if not isinstance(role, str) or not role.strip():
+                self._send_json(
+                    {
                         "error": "Invalid input",
                         "message": (
                             "'role' is required and must be "
                             "a non-empty string"
                         ),
-                    }
-
-                    self.wfile.write(
-                        json.dumps(response).encode("utf-8")
-                    )
-
-                    return
-
-                # Sanitize and add new user
-                validated_user = {
-                    "id": len(Mock_DB["users"]) + 1,
-                    "name": new_user["name"].strip(),
-                    "role": new_user["role"].strip(),
-                }
-
-                Mock_DB["users"].append(validated_user)
-
-                # Return newly created user
-                self._set_headers(201)
-
-                self.wfile.write(
-                    json.dumps(validated_user).encode("utf-8")
+                    },
+                    400,
                 )
+                return
 
-            except json.JSONDecodeError as e:
-                self._set_headers(400)
-
-                response = {
-                    "error": "Invalid JSON",
-                    "message": str(e),
-                }
-
-                self.wfile.write(
-                    json.dumps(response).encode("utf-8")
-                )
-
-            except Exception as e:
-                self._set_headers(400)
-
-                response = {
-                    "error": "Invalid JSON or structure",
-                    "message": str(e),
-                }
-
-                self.wfile.write(
-                    json.dumps(response).encode("utf-8")
-                )
-
-        # Unknown endpoint
-        else:
-            self._set_headers(404)
-
-            response = {
-                "error": "Not Found"
+            validated_user = {
+                "id": next_user_id(),
+                "name": name.strip(),
+                "role": role.strip(),
             }
 
-            self.wfile.write(
-                json.dumps(response).encode("utf-8")
+            Mock_DB["users"].append(validated_user)
+            self._send_json(validated_user, 201)
+
+        except json.JSONDecodeError as exc:
+            self._send_json(
+                {"error": "Invalid JSON", "message": str(exc)},
+                400,
             )
 
-    # --------------------------------------------------------
-    # Disable Default HTTP Server Logging
-    # --------------------------------------------------------
+        except Exception as exc:
+            self._send_json(
+                {
+                    "error": "Invalid JSON or structure",
+                    "message": str(exc),
+                },
+                400,
+            )
 
     def log_message(self, format, *args):
-        """Suppress default HTTP server logging."""
         return
+
+
+# ============================================================
+# Database Helpers
+# ============================================================
+
+def next_user_id():
+    if not Mock_DB["users"]:
+        return 1
+    return max(user["id"] for user in Mock_DB["users"]) + 1
+
+
+def reset_database():
+    Mock_DB["users"].clear()
+    Mock_DB["users"].extend(
+        [
+            {"id": 1, "name": "Alice", "role": "Admin"},
+            {"id": 2, "name": "Bob", "role": "User"},
+        ]
+    )
+
+
+def get_user_by_id(user_id):
+    return next(
+        (user for user in Mock_DB["users"] if user["id"] == user_id),
+        None,
+    )
 
 
 # ============================================================
@@ -241,197 +203,223 @@ class MockAPIHandler(BaseHTTPRequestHandler):
 # ============================================================
 
 class ThreadedHTTPServer(HTTPServer):
-    """
-    HTTP server that allows fast re-binding of the port.
-    """
-
     allow_reuse_address = True
 
 
-# ============================================================
-# Find a Free TCP Port
-# ============================================================
-
 def get_free_port():
-    """Find and return an available TCP port."""
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        port = s.getsockname()[1]
-
-    return port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("", 0))
+        return sock.getsockname()[1]
 
 
-# ============================================================
-# Run API Server
-# ============================================================
-
-def run_server(port):
-    """Start the mock API server."""
-
+def run_server(port, ready_event=None):
     server_address = ("", port)
+    httpd = ThreadedHTTPServer(server_address, MockAPIHandler)
 
-    httpd = ThreadedHTTPServer(
-        server_address,
-        MockAPIHandler
-    )
+    if ready_event is not None:
+        ready_event.set()
 
     print(f"Starting API Simulator on port {port}...")
-    print(f"API Base URL: http://localhost:{port}")
-    print()
+    print(f"API Base URL: http://{HOST}:{port}")
 
     try:
         httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nStopping API server...")
     finally:
         httpd.server_close()
 
 
 # ============================================================
-# List Users as a Table
+# Client Helpers
 # ============================================================
 
-def list_users_as_table(api_port):
-    """Fetch users from the API and display them as a table."""
+def api_url(port, path):
+    return f"http://{HOST}:{port}{path}"
 
+
+def get_users(port):
+    response = requests.get(
+        api_url(port, "/api/users"),
+        timeout=REQUEST_TIMEOUT,
+    )
+    return response
+
+
+def get_user(port, user_id):
+    response = requests.get(
+        api_url(port, f"/api/users/{user_id}"),
+        timeout=REQUEST_TIMEOUT,
+    )
+    return response
+
+
+def create_user(port, name, role):
+    response = requests.post(
+        api_url(port, "/api/users"),
+        json={"name": name, "role": role},
+        timeout=REQUEST_TIMEOUT,
+    )
+    return response
+
+
+def print_response(response):
+    print("Status Code:", response.status_code)
     try:
-        response = requests.get(
-            f"http://localhost:{api_port}/api/users",
-            timeout=5
-        )
+        print("Response:", response.json())
+    except ValueError:
+        print("Response:", response.text)
 
-        if response.status_code == 200:
 
-            users = response.json()
+def list_users_as_table(api_port):
+    try:
+        response = get_users(api_port)
 
-            # Define headers and column widths
-            headers = ["ID", "Name", "Role"]
-            col_widths = [6, 20, 15]
-
-            # Create format string
-            row_format = (
-                "| "
-                + " | ".join(
-                    f"{{:<{width}}}"
-                    for width in col_widths
-                )
-                + " |"
-            )
-
-            border = (
-                "+"
-                + "+".join(
-                    "-" * (width + 2)
-                    for width in col_widths
-                )
-                + "+"
-            )
-
-            # Print table
-            print(border)
-            print(row_format.format(*headers))
-            print(border)
-
-            for user in users:
-                print(
-                    row_format.format(
-                        user.get("id", ""),
-                        user.get("name", ""),
-                        user.get("role", ""),
-                    )
-                )
-
-            print(border)
-
-        else:
+        if response.status_code != 200:
             print(
                 f"Failed to fetch users. "
                 f"Status code: {response.status_code}"
             )
+            return
 
-    except requests.RequestException as e:
-        print(f"An error occurred while fetching users: {e}")
+        users = response.json()
+        headers = ["ID", "Name", "Role"]
+        col_widths = [6, 20, 15]
+
+        row_format = (
+            "| "
+            + " | ".join(
+                f"{{:<{width}}}" for width in col_widths
+            )
+            + " |"
+        )
+
+        border = (
+            "+"
+            + "+".join("-" * (width + 2) for width in col_widths)
+            + "+"
+        )
+
+        print(border)
+        print(row_format.format(*headers))
+        print(border)
+
+        for user in users:
+            print(
+                row_format.format(
+                    user.get("id", ""),
+                    user.get("name", ""),
+                    user.get("role", ""),
+                )
+            )
+
+        print(border)
+
+    except requests.RequestException as exc:
+        print(f"An error occurred while fetching users: {exc}")
 
 
 # ============================================================
-# Test GET /api/users/<id>
+# Test Functions
 # ============================================================
 
 def test_get_existing_user(port):
-    print("\n--- Testing GET /api/users/1 (Existing User) ---")
-
-    response = requests.get(
-        f"http://localhost:{port}/api/users/1",
-        timeout=5
-    )
-
-    print("Status Code:", response.status_code)
-    print("Response:", response.json())
+    print("\n--- Testing GET /api/users/1 ---")
+    print_response(get_user(port, 1))
 
 
 def test_get_nonexistent_user(port):
-    print("\n--- Testing GET /api/users/99 (Non-existent User) ---")
-
-    response = requests.get(
-        f"http://localhost:{port}/api/users/99",
-        timeout=5
-    )
-
-    print("Status Code:", response.status_code)
-    print("Response:", response.json())
+    print("\n--- Testing GET /api/users/99 ---")
+    print_response(get_user(port, 99))
 
 
 def test_get_invalid_user_id(port):
-    print("\n--- Testing GET /api/users/invalid_id (Bad Request) ---")
-
-    response = requests.get(
-        f"http://localhost:{port}/api/users/invalid_id",
-        timeout=5
+    print("\n--- Testing GET /api/users/invalid_id ---")
+    print_response(
+        requests.get(
+            api_url(port, "/api/users/invalid_id"),
+            timeout=REQUEST_TIMEOUT,
+        )
     )
 
-    print("Status Code:", response.status_code)
-    print("Response:", response.json())
-
-
-# ============================================================
-# Test POST /api/users
-# ============================================================
 
 def test_create_user(port):
-    print("\n--- Testing POST /api/users (Create User) ---")
-
-    new_user = {
-        "name": "Charlie",
-        "role": "Developer",
-    }
-
-    response = requests.post(
-        f"http://localhost:{port}/api/users",
-        json=new_user,
-        timeout=5
-    )
-
-    print("Status Code:", response.status_code)
-    print("Response:", response.json())
+    print("\n--- Testing POST /api/users ---")
+    print_response(create_user(port, "Charlie", "Developer"))
 
 
 def test_invalid_user(port):
-    print("\n--- Testing POST /api/users (Invalid User) ---")
+    print("\n--- Testing POST /api/users with invalid data ---")
+    print_response(create_user(port, "", "User"))
 
-    invalid_user = {
-        "name": "",
-        "role": "User",
-    }
 
+def test_missing_name(port):
+    print("\n--- Testing POST /api/users with missing name ---")
     response = requests.post(
-        f"http://localhost:{port}/api/users",
-        json=invalid_user,
-        timeout=5
+        api_url(port, "/api/users"),
+        json={"role": "User"},
+        timeout=REQUEST_TIMEOUT,
+    )
+    print_response(response)
+
+
+def test_missing_role(port):
+    print("\n--- Testing POST /api/users with missing role ---")
+    response = requests.post(
+        api_url(port, "/api/users"),
+        json={"name": "Eve"},
+        timeout=REQUEST_TIMEOUT,
+    )
+    print_response(response)
+
+
+def test_invalid_json(port):
+    print("\n--- Testing POST /api/users with invalid JSON ---")
+    response = requests.post(
+        api_url(port, "/api/users"),
+        data="{not valid json",
+        headers={"Content-Type": "application/json"},
+        timeout=REQUEST_TIMEOUT,
+    )
+    print_response(response)
+
+
+# ============================================================
+# Automated Assertions
+# ============================================================
+
+def assert_status(response, expected):
+    assert response.status_code == expected, (
+        f"Expected {expected}, got {response.status_code}"
     )
 
-    print("Status Code:", response.status_code)
-    print("Response:", response.json())
+
+def run_assertion_tests(port):
+    print("\n--- Running automated API assertions ---")
+
+    response = get_users(port)
+    assert_status(response, 200)
+    assert isinstance(response.json(), list)
+
+    response = get_user(port, 1)
+    assert_status(response, 200)
+    assert response.json()["name"] == "Alice"
+
+    response = get_user(port, 9999)
+    assert_status(response, 404)
+
+    response = requests.get(
+        api_url(port, "/api/users/not-an-int"),
+        timeout=REQUEST_TIMEOUT,
+    )
+    assert_status(response, 400)
+
+    response = create_user(port, "Test User", "Tester")
+    assert_status(response, 201)
+    assert response.json()["name"] == "Test User"
+
+    response = create_user(port, "", "Tester")
+    assert_status(response, 400)
+
+    print("All automated API assertions passed.")
 
 
 # ============================================================
@@ -439,62 +427,61 @@ def test_invalid_user(port):
 # ============================================================
 
 def main():
-    # Dynamically find a free port
-    port = get_free_port()
+    reset_database()
 
-    # Start API server in background thread
+    port = get_free_port()
+    ready_event = threading.Event()
+
     thread = threading.Thread(
         target=run_server,
-        args=(port,),
+        args=(port, ready_event),
         daemon=True,
     )
-
     thread.start()
 
-    # Wait a moment for the server to start
-    time.sleep(1)
+    if not ready_event.wait(timeout=5):
+        raise RuntimeError("API server failed to start.")
+
+    time.sleep(0.1)
 
     print("=" * 60)
     print("MOCK API TEST")
     print("=" * 60)
 
-    # Run GET tests
     test_get_existing_user(port)
     test_get_nonexistent_user(port)
     test_get_invalid_user_id(port)
 
-    # Display all users
     print("\n--- Testing GET /api/users ---")
     list_users_as_table(port)
 
-    # Run POST tests
     test_create_user(port)
 
-    # Display users after POST
     print("\n--- Users After Creating Charlie ---")
     list_users_as_table(port)
 
-    # Test invalid POST request
     test_invalid_user(port)
+    test_missing_name(port)
+    test_missing_role(port)
+    test_invalid_json(port)
+
+    print("\n--- Final User List ---")
+    list_users_as_table(port)
+
+    run_assertion_tests(port)
 
     print("\n" + "=" * 60)
     print("API simulator is still running.")
-    print(f"Base URL: http://localhost:{port}")
+    print(f"Base URL: http://{HOST}:{port}")
     print("Press Ctrl+C to stop.")
     print("=" * 60)
 
-    # Keep main program alive while the daemon server runs
     try:
         while True:
             time.sleep(1)
-
     except KeyboardInterrupt:
-        print("\n\nShutting down client...")
+        print("\nShutting down client...")
 
-
-# ============================================================
-# Entry Point
-# ============================================================
 
 if __name__ == "__main__":
     main()
