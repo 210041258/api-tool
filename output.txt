@@ -1,19 +1,16 @@
-Starting API Simulator on port 54321...
-API Base URL: http://localhost:54321
-
 ============================================================
 MOCK API TEST
 ============================================================
 
---- Testing GET /api/users/1 (Existing User) ---
+--- Testing GET /api/users/1 ---
 Status Code: 200
 Response: {'id': 1, 'name': 'Alice', 'role': 'Admin'}
 
---- Testing GET /api/users/99 (Non-existent User) ---
+--- Testing GET /api/users/99 ---
 Status Code: 404
 Response: {'error': 'Not Found', 'message': 'User with ID 99 not found'}
 
---- Testing GET /api/users/invalid_id (Bad Request) ---
+--- Testing GET /api/users/invalid_id ---
 Status Code: 400
 Response: {'error': 'Bad Request', 'message': 'User ID must be an integer'}
 
@@ -25,7 +22,7 @@ Response: {'error': 'Bad Request', 'message': 'User ID must be an integer'}
 | 2      | Bob                  | User            |
 +--------+----------------------+-----------------+
 
---- Testing POST /api/users (Create User) ---
+--- Testing POST /api/users ---
 Status Code: 201
 Response: {'id': 3, 'name': 'Charlie', 'role': 'Developer'}
 
@@ -38,12 +35,34 @@ Response: {'id': 3, 'name': 'Charlie', 'role': 'Developer'}
 | 3      | Charlie              | Developer       |
 +--------+----------------------+-----------------+
 
---- Testing POST /api/users (Invalid User) ---
+--- Testing POST /api/users with invalid data ---
 Status Code: 400
 Response: {'error': 'Invalid input', 'message': "'name' is required and must be a non-empty string"}
 
-============================================================
-API simulator is still running.
-Base URL: http://localhost:54321
-Press Ctrl+C to stop.
-============================================================
+--- Testing POST /api/users with missing name ---
+Status Code: 400
+Response: {'error': 'Invalid input', 'message': "'name' is required and must be a non-empty string"}
+
+--- Testing POST /api/users with missing role ---
+Status Code: 400
+Response: {'error': 'Invalid input', 'message': "'role' is required and must be a non-empty string"}
+
+--- Testing POST /api/users with invalid JSON ---
+Status Code: 400
+Response: {'error': 'Bad Request', 'message': 'Invalid JSON: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)'}
+
+--- Testing DELETE /api/users/1 (method not allowed) ---
+Status Code: 405
+Response: {'error': 'Method Not Allowed', 'message': 'Allowed methods: GET, POST'}
+
+--- Final User List ---
++--------+----------------------+-----------------+
+| ID     | Name                 | Role            |
++--------+----------------------+-----------------+
+| 1      | Alice                | Admin           |
+| 2      | Bob                  | User            |
+| 3      | Charlie              | Developer       |
++--------+----------------------+-----------------+
+
+--- Running automated API assertions ---
+All automated API assertions passed.
