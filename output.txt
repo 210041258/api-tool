@@ -1,0 +1,5 @@
+Run startedInitializing environmentInstalling packagesRunning code   line 500, in <module>
+   line 452, in main
+  File "/lib/python312.zip/threading.py", line 992, in start
+    _start_new_thread(self._bootstrap, ())
+RuntimeError: can't start new threadRun completed in 11,550.900ms
